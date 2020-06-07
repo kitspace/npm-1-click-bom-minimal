@@ -1,5 +1,4 @@
 var {retailer_list, maxPartNumbers} = require('./line_data')
-var xlsx = require('xlsx')
 
 var headings = [
   {reference: 'References'},
@@ -7,17 +6,6 @@ var headings = [
   {description: 'Description'},
   {partNumbers: 'Part Number'}
 ]
-
-function write(lines, options) {
-  let tsv = writeTSV(lines)
-  // js-xslx gets confused by quote marks in TSV
-  // https://github.com/SheetJS/js-xlsx/issues/825, we don't use non-content
-  // quote marks for TSV so we just escape all the quote marks
-  tsv = tsv.replace(/"/g, '""')
-  const x = xlsx.read(tsv, {type: 'string'})
-
-  return xlsx.write(x, options)
-}
 
 function writeTSV(lines) {
   var r = 'References\tQty\tDescription'
@@ -66,4 +54,3 @@ function writeTSV(lines) {
 }
 
 exports.writeTSV = writeTSV
-exports.write = write
