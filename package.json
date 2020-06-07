@@ -1,6 +1,6 @@
 {
-  "name": "1-click-bom",
-  "description": "Parse and write 1-click-BOM data.",
+  "name": "1-click-bom-minimal",
+  "description": "Minimal parsing/writing lib for 1-click-BOM.tsv files without dependencies",
   "homepage": "http://1clickBOM.com",
   "author": "Kaspar Emanuel",
   "license": "MIT",
@@ -27,8 +27,5 @@
   },
   "main": "lib/main.js",
   "dependencies": {
-    "electro-grammar": "https://github.com/kitspace/electro-grammar#dev2",
-    "s-expression": "^3.0.3",
-    "xlsx": "^0.12.6"
   }
 }

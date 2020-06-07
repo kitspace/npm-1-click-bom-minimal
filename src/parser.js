@@ -1,8 +1,5 @@
 'use strict'
-const xlsx = require('xlsx')
-const fileType = require('./file_type')
 const lineData = require('./line_data')
-const kicadPcbToBom = require('./kicad_pcb')
 
 const retailerAliases = {
   Farnell: 'Farnell',
@@ -18,7 +15,7 @@ const retailerAliases = {
   'Radio(-| )?Spares': 'RS',
   'RS(-| )?Components': 'RS',
   Newark: 'Newark',
-  'JLC': 'JLC Assembly',
+  JLC: 'JLC Assembly',
   'JLC Assembly': 'JLC Assembly',
   LCSC: 'LCSC'
 }
@@ -83,92 +80,25 @@ const headings = {
 }
 
 function parse(input, options = {}) {
-  if (options.ext === 'kicad_pcb') {
-    if (typeof input === 'object') {
-      input = input.toString()
-    }
-    const lines = kicadPcbToBom(input)
-    return {lines, warnings: [], invalid: []}
-  }
-  if (fileType(input) == null && /\t/.test(input)) {
-    return parseTSV(input)
-  }
-  return read(input)
+  return parseTSV(input)
 }
 
 function parseTSV(input) {
-  if (typeof input === 'object') {
-    input = input.toString()
-  }
-  // js-xslx gets confused by quote marks in TSV
-  // https://github.com/SheetJS/js-xlsx/issues/825, we don't use non-content
-  // quote marks for TSV so we just escape all the quote marks
-  input = input.replace(/"/g, '""')
-
-  // additionally js-xlsx can interpret a lot of non-quoted commas as CSV input
-  // so we quote everything
-  input = input
-    .split('\n')
-    .map(line =>
-      line
-        .split('\t')
-        .map(cell => '"' + cell + '"')
-        .join('\t')
-    )
-    .join('\n')
-
   return read(input)
 }
 
 function read(input) {
   const warnings = []
-  let x
-  try {
-    x = xlsx.read(input, {type: 'buffer'})
-  } catch (e) {
-    return {
-      lines: [],
-      invalid: [{row: 1, reason: 'Could not parse'}]
-    }
-  }
-  if (x.Sheets.length < 1) {
-    return {
-      lines: [],
-      invalid: [{row: 1, reason: 'No data'}]
-    }
-  }
-  const sheetName = x.SheetNames[0]
-  if (x.Sheets.length > 1) {
-    warnings.push({
-      title: 'Multiple worksheets found in spreadsheet',
-      message: `Using ${sheetName} only`
-    })
-  }
-  const sheet = x.Sheets[sheetName]
-
-  return toLines(sheet, warnings)
+  const aoa = input
+    .split('\n')
+    .filter(l => l !== '')
+    .map(line => line.split('\t'))
+  return toLines(aoa, warnings)
 }
 
-function toLines(sheet, warnings) {
-  const aoa = sheet_to_aoa(sheet)
-  const h = findHeader(aoa)
-  if (h < 0) {
-    return {
-      lines: [],
-      invalid: [{row: 1, reason: 'Could not find header'}]
-    }
-  }
-  const hs = aoa[h]
-    .map(x => lookup(x, headings) || lookup(x, retailerAliases))
-    .map((x, i) => {
-      if (x === 'manufacturer') {
-        return `manufacturer_${i}`
-      }
-      if (x === 'partNumber') {
-        return `partNumber_${i}`
-      }
-      return x
-    })
+function toLines(aoa, warnings) {
+  let hs = aoa[0].map(x => lookup(x, headings) || lookup(x, retailerAliases))
+
   if (hs.indexOf('quantity') < 0) {
     return {
       lines: [],
@@ -181,8 +111,47 @@ function toLines(sheet, warnings) {
       invalid: [{row: 1, reason: 'No references column'}]
     }
   }
-  let lines = xlsx.utils.sheet_to_json(sheet, {header: hs, range: h + 1})
-  lines = lines
+
+  const number_of_mpns = hs.filter(h => h === 'partNumber').length
+  const number_of_manufacturers = hs.filter(h => h === 'manufacturer').length
+
+  if (number_of_mpns !== number_of_manufacturers) {
+    return {
+      lines: [],
+      invalid: [
+        {
+          row: 1,
+          reason:
+            'Number of manufacturers does not match number of manufacturer part numbers.'
+        }
+      ]
+    }
+  }
+
+  let i = 0
+  hs = hs.map(x => {
+    if (x === 'manufacturer') {
+      return `manufacturer_${i}`
+    }
+    if (x === 'partNumber') {
+      const h = `partNumber_${i}`
+      i += 1
+      return h
+    }
+    return x
+  })
+
+  const lines = aoa
+    .slice(1)
+    .map(a => {
+      const line = {}
+      for (const key of hs) {
+        const index = hs.indexOf(key)
+        const v = a[index]
+        line[key] = v
+      }
+      return line
+    })
     .map(processLine.bind(null, warnings))
     .filter(l => l.quantity > 0)
     .filter(l => l.fitted)
@@ -271,25 +240,6 @@ function processLine(warnings, line, i) {
   return newLine
 }
 
-//finds the first row with the most columns
-function findHeader(aoa) {
-  const {i} = aoa.reduce(
-    (prev, row, i) => {
-      const len = rowLength(row)
-      if (prev.len < len) {
-        return {i, len}
-      }
-      return prev
-    },
-    {i: -1, len: 0}
-  )
-  return i
-}
-
-function rowLength(row) {
-  return row.filter(x => x).length
-}
-
 //a case insensitive match
 function lookup(name, obj) {
   for (const key in obj) {
@@ -300,10 +250,6 @@ function lookup(name, obj) {
   }
   //else
   return null
-}
-
-function sheet_to_aoa(sheet) {
-  return xlsx.utils.sheet_to_json(sheet, {header: 1, range: 0})
 }
 
 function stripQuotes(str) {
